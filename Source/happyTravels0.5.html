@@ -1,0 +1,205 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <title>Place Autocomplete</title>
+    <meta name="viewport" content="initial-scale=1.0, user-scalable=no">
+    <meta charset="utf-8">
+    <link rel="stylesheet" href="happyTravels.css">
+  </head>
+  <body>
+    <input id="origin-input" class="controls" type="text"
+        placeholder="Enter an origin location">
+        
+    <div id="weatherBox" class="weather">
+      <div id="weatherBoxSource" style="float:left; border-right: 2px solid grey"></div>
+      <div id="weatherBoxDest" style="float:right"></div>
+    </div>
+    
+    <input id="destination-input" class="controls" type="text"
+        placeholder="Enter a destination location">
+
+    <div id="mode-selector" class="controls">
+      <input type="radio" name="type" id="changemode-walking" checked="checked">
+      <label for="changemode-walking">Walking</label>
+
+      <input type="radio" name="type" id="changemode-transit">
+      <label for="changemode-transit">Transit</label>
+
+      <input type="radio" name="type" id="changemode-driving">
+      <label for="changemode-driving">Driving</label>
+    </div>
+
+    <div id="map"></div>
+    
+
+
+    <script>
+      // This example requires the Places library. Include the libraries=places
+      // parameter when you first load the API. For example:
+      // <script src="https://maps.googleapis.com/maps/api/js?key=YOUR_API_KEY&libraries=places">
+      
+      var placesService;
+
+      function initMap() {
+        var map = new google.maps.Map(document.getElementById('map'), {
+          mapTypeControl: false,
+          center: {lat: 38.760253, lng: -93.740750},
+          zoom: 17
+        });
+
+        new AutocompleteDirectionsHandler(map);
+        placesService = new google.maps.places.PlacesService(map);
+      }
+
+       /**
+        * @constructor
+       */
+      function AutocompleteDirectionsHandler(map) {
+        this.map = map;
+        this.originPlaceId = null;
+        this.destinationPlaceId = null;
+        this.travelMode = 'WALKING';
+        var originInput = document.getElementById('origin-input');
+        var destinationInput = document.getElementById('destination-input');
+        var modeSelector = document.getElementById('mode-selector');
+        this.directionsService = new google.maps.DirectionsService;
+        this.directionsDisplay = new google.maps.DirectionsRenderer;
+        this.directionsDisplay.setMap(map);
+
+        var originAutocomplete = new google.maps.places.Autocomplete(
+            originInput, {placeIdOnly: true});
+        var destinationAutocomplete = new google.maps.places.Autocomplete(
+            destinationInput, {placeIdOnly: true});
+
+        this.setupClickListener('changemode-walking', 'WALKING');
+        this.setupClickListener('changemode-transit', 'TRANSIT');
+        this.setupClickListener('changemode-driving', 'DRIVING');
+
+        this.setupPlaceChangedListener(originAutocomplete, 'ORIG');
+        this.setupPlaceChangedListener(destinationAutocomplete, 'DEST');
+
+        this.map.controls[google.maps.ControlPosition.TOP_LEFT].push(originInput);
+        this.map.controls[google.maps.ControlPosition.TOP_LEFT].push(destinationInput);
+        this.map.controls[google.maps.ControlPosition.TOP_LEFT].push(modeSelector);
+      }
+
+      // Sets a listener on a radio button to change the filter type on Places
+      // Autocomplete.
+      AutocompleteDirectionsHandler.prototype.setupClickListener = function(id, mode) {
+        var radioButton = document.getElementById(id);
+        var me = this;
+        radioButton.addEventListener('click', function() {
+          me.travelMode = mode;
+          me.route();
+        });
+      };
+
+      AutocompleteDirectionsHandler.prototype.setupPlaceChangedListener = function(autocomplete, mode) {
+        var me = this;
+        autocomplete.bindTo('bounds', this.map);
+        autocomplete.addListener('place_changed', function() {
+          var place = autocomplete.getPlace();
+          if (!place.place_id) {
+            window.alert("Please select an option from the dropdown list.");
+            return;
+          }
+          if (mode === 'ORIG') {
+            me.originPlaceId = place.place_id;
+          } else {
+            me.destinationPlaceId = place.place_id;
+          }
+          me.route();
+        });
+
+      };
+
+      AutocompleteDirectionsHandler.prototype.route = function() {
+        if (!this.originPlaceId || !this.destinationPlaceId) {
+          //show weather for whatever we have
+          return;
+        }
+     
+        var me = this;
+
+        this.directionsService.route(
+          {
+            origin: {'placeId': this.originPlaceId},
+            destination: {'placeId': this.destinationPlaceId},
+            travelMode: this.travelMode
+          }, 
+          function(response, status) {
+            if (status === 'OK') {
+              me.directionsDisplay.setDirections(response);
+            } else {
+              window.alert('Directions request failed due to ' + status);
+            }
+          });
+
+          placesService.getDetails({'placeId': this.originPlaceId}, placeCallbackSource);        
+          placesService.getDetails({'placeId': this.destinationPlaceId}, placeCallbackDest);        
+          
+      };
+      
+      placeCallbackSource = function (place, status) {
+        if (status != google.maps.places.PlacesServiceStatus.OK) return;
+        
+          var city = place.address_components[0].short_name;
+          var state = place.address_components[2].short_name;
+          var xmlHttp = new XMLHttpRequest();
+          xmlHttp.onreadystatechange = function() { 
+            if (xmlHttp.readyState == 4 && xmlHttp.status == 200) {
+              console.log(xmlHttp.responseText);
+              var jsonResponse = JSON.parse(xmlHttp.responseText);
+              weatherCallbackSource(city + " ," + state, jsonResponse);
+            }
+          }
+          var theUrl = 'https://api.wunderground.com/api/3b4e9ced78dc7ac1/conditions/q/'
+              + state + '/' + city + '.json';
+          xmlHttp.open("GET", theUrl, true); // true for asynchronous 
+          xmlHttp.send(null);
+      }
+      
+      placeCallbackDest = function (place, status) {
+        if (status != google.maps.places.PlacesServiceStatus.OK) return;
+        
+          var city = place.address_components[0].short_name;
+          var state = place.address_components[2].short_name;
+          var xmlHttp = new XMLHttpRequest();
+          xmlHttp.onreadystatechange = function() { 
+            if (xmlHttp.readyState == 4 && xmlHttp.status == 200) {
+              console.log(xmlHttp.responseText);
+              var jsonResponse = JSON.parse(xmlHttp.responseText);
+              weatherCallbackDest(city + " ," + state, jsonResponse);
+            }
+          }
+          var theUrl = 'https://api.wunderground.com/api/3b4e9ced78dc7ac1/conditions/q/'
+              + state + '/' + city + '.json';
+          xmlHttp.open("GET", theUrl, true); // true for asynchronous 
+          xmlHttp.send(null);
+      }
+      
+      weatherCallbackSource = function (place, data) {
+        temp = data.current_observation.temp_f;
+        icon = data.current_observation.icon_url;
+        weather = data.current_observation.weather;  
+        document.getElementById('weatherBoxSource').innerHTML = 
+        "<table><tr><td><img src=\"" + icon + "\" /></td><td><b>" 
+          + place + "</b><br>" + temp + " &deg; F<br>" + weather 
+          +"</td></tr></table>"; //the current temp and weather
+      }
+      
+      weatherCallbackDest = function (place, data) {
+        temp = data.current_observation.temp_f;
+        icon = data.current_observation.icon_url;
+        weather = data.current_observation.weather;  
+        document.getElementById('weatherBoxDest').innerHTML = 
+        "<table><tr><td><img src=\"" + icon + "\" /></td><td><b>" 
+          + place + "</b><br>" + temp + " &deg; F<br>" + weather 
+          +"</td></tr></table>"; //the current temp and weather
+      }
+      
+    </script>
+    <script src="https://maps.googleapis.com/maps/api/js?key=AIzaSyCMVM0ZjwecTNscUdpvbXOSSNcGmFRA45I&libraries=places&callback=initMap"
+        async defer></script>
+  </body>
+</html>
